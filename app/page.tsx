@@ -1,69 +1,210 @@
-import Image from "next/image";
+'use client';
+
+import { useState, useEffect } from 'react';
+
+interface Gasto {
+  id: string;
+  monto: number;
+  categoria: string;
+  descripcion: string;
+  fecha: string;
+}
+
+const OPCIONES_CATEGORIA = [
+  'Harina/Levadura',
+  'Quesos',
+  'Embutidos',
+  'Salsas',
+  'Vegetales',    
+  'Cajas/Servilletas/Empaques',
+  'Gas',    
+  'Otros Gastos'
+];
 
 export default function Home() {
+  const [gastos, setGastos] = useState<Gasto[]>([]);
+  const [monto, setMonto] = useState('');
+  const [categoria, setCategoria] = useState(OPCIONES_CATEGORIA[0]);
+  const [descripcion, setDescripcion] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [theme, setTheme] = useState<'dark' | 'light'>('dark');
+
+  useEffect(() => {
+    fetchGastos();
+  }, []);
+
+  const fetchGastos = async () => {
+    try {
+      const res = await fetch('/api/gastos');
+      if (res.ok) {
+        const data = await res.json();
+        setGastos(data);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const toggleTheme = () => {
+    const nextTheme = theme === 'dark' ? 'light' : 'dark';
+    setTheme(nextTheme);
+    document.documentElement.setAttribute('data-theme', nextTheme);
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!monto) return;
+
+    setLoading(true);
+    const res = await fetch('/api/gastos', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ monto, categoria, descripcion }),
+    });
+
+    if (res.ok) {
+      setMonto('');
+      setDescripcion('');
+      fetchGastos();
+    }
+    setLoading(false);
+  };
+
+  const totalGastos = gastos.reduce((acc, item) => acc + item.monto, 0);
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert h-5 w-[100px]"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the{" "}
-            <code className="rounded bg-black/[.06] px-1.5 py-0.5 font-mono text-[0.9em] dark:bg-white/[.08]">
-              page.tsx
-            </code>{" "}
-            file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
+    <div className="wrap">
+      {/* Header */}
+      <header className="top">
+        <div className="brand">
+          <span className="eyebrow">CASIPIZZA · Ficha de equipo</span>
+          <h1>Control de gastos</h1>
+          <p className="sub">
+            Registra y gestiona los egresos operativos de la pizzería en tiempo real.
           </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+        </div>        
+      </header>
+
+      {/* Card 1: Formulario */}
+      <div className="card">
+        <h2>
+          <span className="n">1</span>Registrar nuevo gasto
+        </h2>
+
+        <form onSubmit={handleSubmit}>
+          <div className="scale-row" style={{ marginBottom: '16px' }}>
+            <div className="field">
+              <label htmlFor="monto">Monto (Q)</label>
+              <input
+                id="monto"
+                type="number"
+                step="0.01"
+                placeholder="0.00"
+                value={monto}
+                onChange={(e) => setMonto(e.target.value)}
+                required
+              />
+            </div>
+
+            <div className="field">
+              <label htmlFor="categoria">Categoría</label>
+              <select
+                id="categoria"
+                value={categoria}
+                onChange={(e) => setCategoria(e.target.value)}
+                style={{
+                  width: '100%',
+                  background: 'var(--surface-2)',
+                  border: '1px solid var(--border)',
+                  color: 'var(--text)',
+                  borderRadius: '10px',
+                  padding: '10px 12px',
+                  fontSize: '15px',
+                  fontWeight: '600'
+                }}
+              >
+                {OPCIONES_CATEGORIA.map((cat) => (
+                  <option key={cat} value={cat}>
+                    {cat}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="field" style={{ flex: '1.5' }}>
+              <label htmlFor="descripcion">Descripción</label>
+              <input
+                id="descripcion"
+                type="text"
+                placeholder="Ej. Harina 13% proteína"
+                value={descripcion}
+                onChange={(e) => setDescripcion(e.target.value)}
+              />
+            </div>
+          </div>
+
+          <button
+            type="submit"
+            disabled={loading}
+            className="theme-toggle"
+            style={{ width: '100%', justifyContent: 'center', padding: '12px' }}
           >
-            <Image
-              className="dark:invert h-[14px] w-4"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
+            {loading ? 'Guardando...' : 'Guardar Gasto'}
+          </button>
+        </form>
+      </div>
+
+      {/* Card 2: Total */}
+      <div className="card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <span style={{ fontSize: '15px', color: 'var(--text-dim)', fontWeight: '600' }}>
+          Gastos Acumulados:
+        </span>
+        <strong style={{ fontSize: '24px', fontFamily: "'Fraunces', serif", color: 'var(--accent)' }}>
+          Q{totalGastos.toLocaleString('es-GT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+        </strong>
+      </div>
+
+      {/* Card 3: Historial */}
+      <div className="card">
+        <h2>
+          <span className="n">2</span>Historial
+        </h2>
+
+        <table className="temp-table">
+          <thead>
+            <tr>
+              <th>Fecha</th>
+              <th>Categoría</th>
+              <th>Descripción</th>
+              <th style={{ textAlign: 'right' }}>Monto</th>
+            </tr>
+          </thead>
+          <tbody>
+            {gastos.length === 0 ? (
+              <tr>
+                <td colSpan={4} style={{ textAlign: 'center', color: 'var(--text-dim)', padding: '24px 0' }}>
+                  No hay registros almacenados.
+                </td>
+              </tr>
+            ) : (
+              gastos.map((g) => (
+                <tr key={g.id}>
+                  <td style={{ color: 'var(--text-dim)' }}>
+                    {new Date(g.fecha).toLocaleDateString()}
+                  </td>
+                  <td style={{ fontWeight: '600' }}>{g.categoria}</td>
+                  <td style={{ color: 'var(--text-dim)' }}>{g.descripcion || '—'}</td>
+                  <td className="val" style={{ color: 'var(--accent)' }}>
+                    Q{g.monto.toFixed(2)}
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      <footer>CasiPizza · Control Interno de Gastos</footer>
     </div>
   );
 }
