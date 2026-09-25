@@ -1,51 +1,71 @@
 import { NextResponse } from 'next/server';
-import { redis } from '@/lib/redis';
+import { redis } from '@/lib/redis'; // Asegúrate que tu cliente exporte redis o adapte a tu lib
 
-export interface Gasto {
-  id: string;
-  monto: number;
-  categoria: string;
-  descripcion: string;
-  fecha: string;
-}
-
-const REDIS_KEY = 'casipizza:gastos';
-
-// Obtener todos los gastos
 export async function GET() {
   try {
-    const gastos = await redis.get<Gasto[]>(REDIS_KEY) || [];
+    const data = await redis.get('gastos');
+    const gastos = data ? (typeof data === 'string' ? JSON.parse(data) : data) : [];
     return NextResponse.json(gastos);
-  } catch (error) {
-    return NextResponse.json({ error: 'Error al obtener gastos' }, { status: 500 });
+  } catch (error: any) {
+    return NextResponse.json(
+      { error: 'Error al conectar con la base de datos: ' + error.message },
+      { status: 500 }
+    );
   }
 }
 
-// Guardar un nuevo gasto
-export async function POST(request: Request) {
+export async function POST(req: Request) {
   try {
-    const body = await request.json();
+    const body = await req.json();
     const { monto, categoria, descripcion } = body;
 
-    if (!monto || !categoria) {
-      return NextResponse.json({ error: 'Faltan campos obligatorios' }, { status: 400 });
+    if (!monto || isNaN(Number(monto))) {
+      return NextResponse.json({ error: 'El monto no es válido' }, { status: 400 });
     }
 
-    const nuevoGasto: Gasto = {
-      id: `gasto_${Date.now()}`,
-      monto: parseFloat(monto),
+    const data = await redis.get('gastos');
+    const gastos = data ? (typeof data === 'string' ? JSON.parse(data) : data) : [];
+
+    const nuevoGasto = {
+      id: Date.now().toString(),
+      monto: Number(monto),
       categoria,
-      descripcion: descripcion || '',
+      descripcion,
       fecha: new Date().toISOString(),
     };
 
-    const gastosActuales = await redis.get<Gasto[]>(REDIS_KEY) || [];
-    const nuevosGastos = [nuevoGasto, ...gastosActuales];
-
-    await redis.set(REDIS_KEY, nuevosGastos);
+    gastos.unshift(nuevoGasto);
+    await redis.set('gastos', JSON.stringify(gastos));
 
     return NextResponse.json(nuevoGasto, { status: 201 });
-  } catch (error) {
-    return NextResponse.json({ error: 'Error al guardar el gasto' }, { status: 500 });
+  } catch (error: any) {
+    return NextResponse.json(
+      { error: 'No se pudo guardar en la base de datos: ' + error.message },
+      { status: 500 }
+    );
+  }
+}
+
+export async function DELETE(req: Request) {
+  try {
+    const { searchParams } = new URL(req.url);
+    const id = searchParams.get('id');
+
+    if (!id) {
+      return NextResponse.json({ error: 'Falta el ID del registro' }, { status: 400 });
+    }
+
+    const data = await redis.get('gastos');
+    let gastos = data ? (typeof data === 'string' ? JSON.parse(data) : data) : [];
+
+    gastos = gastos.filter((g: any) => g.id !== id);
+    await redis.set('gastos', JSON.stringify(gastos));
+
+    return NextResponse.json({ success: true, id });
+  } catch (error: any) {
+    return NextResponse.json(
+      { error: 'No se pudo eliminar el registro: ' + error.message },
+      { status: 500 }
+    );
   }
 }
