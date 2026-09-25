@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
+import Modal from '@/components/Modal';
 
 interface Gasto {
   id: string;
@@ -29,7 +30,19 @@ export default function Home() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
 
-  // --- Estados para el Historial Avanzado ---
+  // --- Estado para el Modal Personalizado ---
+  const [modalConfig, setModalConfig] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    idToDelete?: string;
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+  });
+
+  // Filtros y Paginación
   const [search, setSearch] = useState('');
   const [filterCategory, setFilterCategory] = useState('ALL');
   const [startDate, setStartDate] = useState('');
@@ -47,9 +60,7 @@ export default function Home() {
       const res = await fetch('/api/gastos');
       const data = await res.json();
       
-      if (!res.ok) {
-        throw new Error(data.error || 'Error al obtener los gastos');
-      }
+      if (!res.ok) throw new Error(data.error || 'Error al obtener gastos');
       setGastos(data);
     } catch (e: any) {
       setErrorMessage(e.message || 'Error de conexión con el servidor');
@@ -77,10 +88,7 @@ export default function Home() {
       });
 
       const data = await res.json();
-
-      if (!res.ok) {
-        throw new Error(data.error || 'No se pudo guardar el registro');
-      }
+      if (!res.ok) throw new Error(data.error || 'No se pudo guardar el registro');
 
       setMonto('');
       setDescripcion('');
@@ -92,19 +100,29 @@ export default function Home() {
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (!confirm('¿Deseas eliminar este registro de gasto?')) return;
+  // Abre el modal de confirmación
+  const askDeleteConfirmation = (id: string) => {
+    setModalConfig({
+      isOpen: true,
+      title: 'Eliminar Registro',
+      message: '¿Estás seguro de que deseas eliminar este gasto? Esta acción no se puede deshacer.',
+      idToDelete: id,
+    });
+  };
+
+  // Procesa la eliminación tras confirmar en el modal
+  const handleConfirmDelete = async () => {
+    const id = modalConfig.idToDelete;
+    setModalConfig({ isOpen: false, title: '', message: '' });
+
+    if (!id) return;
 
     setErrorMessage(null);
     try {
-      const res = await fetch(`/api/gastos?id=${id}`, {
-        method: 'DELETE',
-      });
+      const res = await fetch(`/api/gastos?id=${id}`, { method: 'DELETE' });
       const data = await res.json();
 
-      if (!res.ok) {
-        throw new Error(data.error || 'No se pudo eliminar el registro');
-      }
+      if (!res.ok) throw new Error(data.error || 'No se pudo eliminar el registro');
 
       fetchGastos();
     } catch (e: any) {
@@ -112,18 +130,12 @@ export default function Home() {
     }
   };
 
-  // --- Lógica de Filtrado y Paginación ---
   const filteredGastos = useMemo(() => {
     return gastos.filter((g) => {
-      // Búsqueda por texto (descripción o categoría)
       const matchesSearch = 
         g.descripcion.toLowerCase().includes(search.toLowerCase()) ||
         g.categoria.toLowerCase().includes(search.toLowerCase());
-
-      // Filtro por categoría
       const matchesCategory = filterCategory === 'ALL' || g.categoria === filterCategory;
-
-      // Filtro por fecha
       const gastoDate = new Date(g.fecha).toISOString().split('T')[0];
       const matchesStartDate = !startDate || gastoDate >= startDate;
       const matchesEndDate = !endDate || gastoDate <= endDate;
@@ -132,15 +144,9 @@ export default function Home() {
     });
   }, [gastos, search, filterCategory, startDate, endDate]);
 
-  const totalFiltrado = useMemo(() => {
-    return filteredGastos.reduce((acc, item) => acc + item.monto, 0);
-  }, [filteredGastos]);
+  const totalFiltrado = useMemo(() => filteredGastos.reduce((acc, item) => acc + item.monto, 0), [filteredGastos]);
+  const totalGeneral = useMemo(() => gastos.reduce((acc, item) => acc + item.monto, 0), [gastos]);
 
-  const totalGeneral = useMemo(() => {
-    return gastos.reduce((acc, item) => acc + item.monto, 0);
-  }, [gastos]);
-
-  // Paginación
   const totalPages = Math.ceil(filteredGastos.length / itemsPerPage) || 1;
   const paginatedGastos = useMemo(() => {
     const start = (currentPage - 1) * itemsPerPage;
@@ -157,6 +163,18 @@ export default function Home() {
 
   return (
     <div className="app-container">
+      {/* Componente Modal Personalizado */}
+      <Modal
+        isOpen={modalConfig.isOpen}
+        title={modalConfig.title}
+        message={modalConfig.message}
+        type="confirm"
+        confirmText="Eliminar"
+        cancelText="Cancelar"
+        onConfirm={handleConfirmDelete}
+        onCancel={() => setModalConfig({ isOpen: false, title: '', message: '' })}
+      />
+
       {/* Banner de Errores */}
       {errorMessage && (
         <div style={{
@@ -172,12 +190,7 @@ export default function Home() {
           alignItems: 'center'
         }}>
           <span>⚠️ {errorMessage}</span>
-          <button 
-            onClick={() => setErrorMessage(null)} 
-            style={{ background: 'transparent', border: 'none', color: '#fff', cursor: 'pointer', fontWeight: 'bold' }}
-          >
-            ✕
-          </button>
+          <button onClick={() => setErrorMessage(null)} style={{ background: 'transparent', border: 'none', color: '#fff', cursor: 'pointer', fontWeight: 'bold' }}>✕</button>
         </div>
       )}
 
@@ -196,54 +209,32 @@ export default function Home() {
       {/* Formulario */}
       <div className="card">
         <h2><span className="n">1</span>Ingresar nuevo gasto</h2>
-
         <form onSubmit={handleSubmit}>
           <div className="form-grid">
             <div className="field">
               <label htmlFor="monto">Monto (Q)</label>
-              <input
-                id="monto"
-                type="number"
-                step="0.01"
-                placeholder="0.00"
-                value={monto}
-                onChange={(e) => setMonto(e.target.value)}
-                required
-              />
+              <input id="monto" type="number" step="0.01" placeholder="0.00" value={monto} onChange={(e) => setMonto(e.target.value)} required />
             </div>
-
             <div className="field">
               <label htmlFor="categoria">Categoría</label>
-              <select
-                id="categoria"
-                value={categoria}
-                onChange={(e) => setCategoria(e.target.value)}
-              >
+              <select id="categoria" value={categoria} onChange={(e) => setCategoria(e.target.value)}>
                 {OPCIONES_CATEGORIA.map((cat) => (
                   <option key={cat} value={cat}>{cat}</option>
                 ))}
               </select>
             </div>
-
             <div className="field">
               <label htmlFor="descripcion">Descripción</label>
-              <input
-                id="descripcion"
-                type="text"
-                placeholder="Ej. Harina 13% proteína (Saco 50lb)"
-                value={descripcion}
-                onChange={(e) => setDescripcion(e.target.value)}
-              />
+              <input id="descripcion" type="text" placeholder="Ej. Harina 13% proteína (Saco 50lb)" value={descripcion} onChange={(e) => setDescripcion(e.target.value)} />
             </div>
           </div>
-
           <button type="submit" disabled={loading} className="submit-btn">
             {loading ? 'Guardando registro...' : 'Guardar Gasto'}
           </button>
         </form>
       </div>
 
-      {/* Card de Resumen de Acumulados */}
+      {/* Cards de Resumen */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', marginBottom: '24px' }}>
         <div className="card" style={{ marginBottom: 0, textAlign: 'center' }}>
           <span style={{ fontSize: '13px', color: 'var(--text-dim)', fontWeight: '600' }}>TOTAL REGISTRADO</span>
@@ -265,11 +256,10 @@ export default function Home() {
         </div>
       </div>
 
-      {/* HISTORIAL COMPLETO Y FILTROS */}
+      {/* Historial Completo y Filtros */}
       <div className="card">
         <h2><span className="n">2</span>Historial Completo de Compras</h2>
 
-        {/* Panel de Filtros */}
         <div style={{ 
           display: 'grid', 
           gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', 
@@ -282,70 +272,30 @@ export default function Home() {
         }}>
           <div>
             <label style={{ fontSize: '12px', color: 'var(--text-dim)', display: 'block', marginBottom: '4px' }}>Buscar</label>
-            <input 
-              type="text" 
-              placeholder="Ej. Harina, Queso..." 
-              value={search} 
-              onChange={(e) => { setSearch(e.target.value); setCurrentPage(1); }}
-              style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--bg-input)', color: 'inherit' }}
-            />
+            <input type="text" placeholder="Ej. Harina, Queso..." value={search} onChange={(e) => { setSearch(e.target.value); setCurrentPage(1); }} style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--bg-input)', color: 'inherit' }} />
           </div>
-
           <div>
             <label style={{ fontSize: '12px', color: 'var(--text-dim)', display: 'block', marginBottom: '4px' }}>Categoría</label>
-            <select 
-              value={filterCategory} 
-              onChange={(e) => { setFilterCategory(e.target.value); setCurrentPage(1); }}
-              style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--bg-input)', color: 'inherit' }}
-            >
+            <select value={filterCategory} onChange={(e) => { setFilterCategory(e.target.value); setCurrentPage(1); }} style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--bg-input)', color: 'inherit' }}>
               <option value="ALL">Todas las categorías</option>
-              {OPCIONES_CATEGORIA.map((c) => (
-                <option key={c} value={c}>{c}</option>
-              ))}
+              {OPCIONES_CATEGORIA.map((c) => <option key={c} value={c}>{c}</option>)}
             </select>
           </div>
-
           <div>
             <label style={{ fontSize: '12px', color: 'var(--text-dim)', display: 'block', marginBottom: '4px' }}>Desde</label>
-            <input 
-              type="date" 
-              value={startDate} 
-              onChange={(e) => { setStartDate(e.target.value); setCurrentPage(1); }}
-              style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--bg-input)', color: 'inherit' }}
-            />
+            <input type="date" value={startDate} onChange={(e) => { setStartDate(e.target.value); setCurrentPage(1); }} style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--bg-input)', color: 'inherit' }} />
           </div>
-
           <div>
             <label style={{ fontSize: '12px', color: 'var(--text-dim)', display: 'block', marginBottom: '4px' }}>Hasta</label>
-            <input 
-              type="date" 
-              value={endDate} 
-              onChange={(e) => { setEndDate(e.target.value); setCurrentPage(1); }}
-              style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--bg-input)', color: 'inherit' }}
-            />
+            <input type="date" value={endDate} onChange={(e) => { setEndDate(e.target.value); setCurrentPage(1); }} style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--bg-input)', color: 'inherit' }} />
           </div>
-
           <div style={{ display: 'flex', alignItems: 'flex-end' }}>
-            <button 
-              onClick={resetFilters}
-              type="button"
-              style={{ 
-                width: '100%', 
-                padding: '9px 12px', 
-                borderRadius: '8px', 
-                border: 'none', 
-                background: '#334155', 
-                color: '#fff', 
-                fontWeight: '600', 
-                cursor: 'pointer' 
-              }}
-            >
+            <button onClick={resetFilters} type="button" style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: 'none', background: '#334155', color: '#fff', fontWeight: '600', cursor: 'pointer' }}>
               Limpiar
             </button>
           </div>
         </div>
 
-        {/* Tabla */}
         <div className="table-wrapper">
           <table className="gastos-table">
             <thead>
@@ -377,15 +327,9 @@ export default function Home() {
                     </td>
                     <td style={{ textAlign: 'center' }}>
                       <button
-                        onClick={() => handleDelete(g.id)}
+                        onClick={() => askDeleteConfirmation(g.id)}
                         title="Eliminar gasto"
-                        style={{
-                          background: 'transparent',
-                          border: 'none',
-                          color: '#ef4444',
-                          cursor: 'pointer',
-                          fontSize: '16px'
-                        }}
+                        style={{ background: 'transparent', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: '16px' }}
                       >
                         🗑️
                       </button>
@@ -397,43 +341,12 @@ export default function Home() {
           </table>
         </div>
 
-        {/* Controles de Paginación */}
         {totalPages > 1 && (
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '20px' }}>
-            <span style={{ fontSize: '13px', color: 'var(--text-dim)' }}>
-              Página {currentPage} de {totalPages}
-            </span>
+            <span style={{ fontSize: '13px', color: 'var(--text-dim)' }}>Página {currentPage} de {totalPages}</span>
             <div style={{ display: 'flex', gap: '8px' }}>
-              <button
-                disabled={currentPage === 1}
-                onClick={() => setCurrentPage((p) => p - 1)}
-                style={{
-                  padding: '6px 12px',
-                  borderRadius: '6px',
-                  border: '1px solid var(--border)',
-                  background: 'var(--bg-input)',
-                  color: 'inherit',
-                  cursor: currentPage === 1 ? 'not-allowed' : 'pointer',
-                  opacity: currentPage === 1 ? 0.5 : 1
-                }}
-              >
-                ◀ Anterior
-              </button>
-              <button
-                disabled={currentPage === totalPages}
-                onClick={() => setCurrentPage((p) => p + 1)}
-                style={{
-                  padding: '6px 12px',
-                  borderRadius: '6px',
-                  border: '1px solid var(--border)',
-                  background: 'var(--bg-input)',
-                  color: 'inherit',
-                  cursor: currentPage === totalPages ? 'not-allowed' : 'pointer',
-                  opacity: currentPage === totalPages ? 0.5 : 1
-                }}
-              >
-                Siguiente ▶
-              </button>
+              <button disabled={currentPage === 1} onClick={() => setCurrentPage((p) => p - 1)} style={{ padding: '6px 12px', borderRadius: '6px', border: '1px solid var(--border)', background: 'var(--bg-input)', color: 'inherit', cursor: currentPage === 1 ? 'not-allowed' : 'pointer', opacity: currentPage === 1 ? 0.5 : 1 }}>◀ Anterior</button>
+              <button disabled={currentPage === totalPages} onClick={() => setCurrentPage((p) => p + 1)} style={{ padding: '6px 12px', borderRadius: '6px', border: '1px solid var(--border)', background: 'var(--bg-input)', color: 'inherit', cursor: currentPage === totalPages ? 'not-allowed' : 'pointer', opacity: currentPage === totalPages ? 0.5 : 1 }}>Siguiente ▶</button>
             </div>
           </div>
         )}
