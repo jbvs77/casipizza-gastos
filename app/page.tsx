@@ -12,12 +12,13 @@ interface Gasto {
 }
 
 const OPCIONES_CATEGORIA = [
-  'Harina y Levadura',
-  'Quesos y Lácteos',
-  'Embutidos y Carnes',
-  'Salsas y Empaques',
-  'Servicios (Gas, Luz, Agua)',
-  'Nómina / Sueldos',
+  'Harina/Levadura',
+  'Quesos',
+  'Embutidos',
+  'Salsas',
+  'Vegetales',    
+  'Cajas/Servilletas/Empaques',
+  'Gas',    
   'Otros Gastos'
 ];
 
