@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 
 interface Gasto {
   id: string;
@@ -29,6 +29,14 @@ export default function Home() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
 
+  // --- Estados para el Historial Avanzado ---
+  const [search, setSearch] = useState('');
+  const [filterCategory, setFilterCategory] = useState('ALL');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 8;
+
   useEffect(() => {
     fetchGastos();
   }, []);
@@ -40,7 +48,7 @@ export default function Home() {
       const data = await res.json();
       
       if (!res.ok) {
-        throw new Error(data.error || 'Error al obtener la lista de gastos');
+        throw new Error(data.error || 'Error al obtener los gastos');
       }
       setGastos(data);
     } catch (e: any) {
@@ -78,14 +86,14 @@ export default function Home() {
       setDescripcion('');
       fetchGastos();
     } catch (e: any) {
-      setErrorMessage(e.message || 'Ocurrió un fallo al intentar guardar');
+      setErrorMessage(e.message || 'Error al intentar guardar');
     } finally {
       setLoading(false);
     }
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('¿Seguro que deseas borrar este registro?')) return;
+    if (!confirm('¿Deseas eliminar este registro de gasto?')) return;
 
     setErrorMessage(null);
     try {
@@ -100,15 +108,56 @@ export default function Home() {
 
       fetchGastos();
     } catch (e: any) {
-      setErrorMessage(e.message || 'Ocurrió un error al eliminar');
+      setErrorMessage(e.message || 'Error al eliminar el registro');
     }
   };
 
-  const totalGastos = gastos.reduce((acc, item) => acc + item.monto, 0);
+  // --- Lógica de Filtrado y Paginación ---
+  const filteredGastos = useMemo(() => {
+    return gastos.filter((g) => {
+      // Búsqueda por texto (descripción o categoría)
+      const matchesSearch = 
+        g.descripcion.toLowerCase().includes(search.toLowerCase()) ||
+        g.categoria.toLowerCase().includes(search.toLowerCase());
+
+      // Filtro por categoría
+      const matchesCategory = filterCategory === 'ALL' || g.categoria === filterCategory;
+
+      // Filtro por fecha
+      const gastoDate = new Date(g.fecha).toISOString().split('T')[0];
+      const matchesStartDate = !startDate || gastoDate >= startDate;
+      const matchesEndDate = !endDate || gastoDate <= endDate;
+
+      return matchesSearch && matchesCategory && matchesStartDate && matchesEndDate;
+    });
+  }, [gastos, search, filterCategory, startDate, endDate]);
+
+  const totalFiltrado = useMemo(() => {
+    return filteredGastos.reduce((acc, item) => acc + item.monto, 0);
+  }, [filteredGastos]);
+
+  const totalGeneral = useMemo(() => {
+    return gastos.reduce((acc, item) => acc + item.monto, 0);
+  }, [gastos]);
+
+  // Paginación
+  const totalPages = Math.ceil(filteredGastos.length / itemsPerPage) || 1;
+  const paginatedGastos = useMemo(() => {
+    const start = (currentPage - 1) * itemsPerPage;
+    return filteredGastos.slice(start, start + itemsPerPage);
+  }, [filteredGastos, currentPage]);
+
+  const resetFilters = () => {
+    setSearch('');
+    setFilterCategory('ALL');
+    setStartDate('');
+    setEndDate('');
+    setCurrentPage(1);
+  };
 
   return (
     <div className="app-container">
-      {/* Banner de Errores Visibles */}
+      {/* Banner de Errores */}
       {errorMessage && (
         <div style={{
           backgroundColor: '#ef4444',
@@ -137,9 +186,7 @@ export default function Home() {
         <div className="brand">
           <span className="eyebrow">CasiPizza · Control Financiero</span>
           <h1>Registro de Egresos</h1>
-          <p className="sub">
-            Administra las compras operativas y mantén el control de costos de la pizzería.
-          </p>
+          <p className="sub">Administra las compras operativas y mantén el control de costos.</p>
         </div>
         <button className="theme-toggle" onClick={toggleTheme} type="button">
           <span>{theme === 'dark' ? '☀️ Modo Claro' : '🌙 Modo Oscuro'}</span>
@@ -148,9 +195,7 @@ export default function Home() {
 
       {/* Formulario */}
       <div className="card">
-        <h2>
-          <span className="n">1</span>Ingresar nuevo gasto
-        </h2>
+        <h2><span className="n">1</span>Ingresar nuevo gasto</h2>
 
         <form onSubmit={handleSubmit}>
           <div className="form-grid">
@@ -175,9 +220,7 @@ export default function Home() {
                 onChange={(e) => setCategoria(e.target.value)}
               >
                 {OPCIONES_CATEGORIA.map((cat) => (
-                  <option key={cat} value={cat}>
-                    {cat}
-                  </option>
+                  <option key={cat} value={cat}>{cat}</option>
                 ))}
               </select>
             </div>
@@ -200,42 +243,129 @@ export default function Home() {
         </form>
       </div>
 
-      {/* Card de Acumulado */}
-      <div className="card total-card">
-        <span style={{ fontSize: '16px', color: 'var(--text-dim)', fontWeight: '600' }}>
-          Total Gastos Acumulados
-        </span>
-        <span className="total-amount">
-          Q{totalGastos.toLocaleString('es-GT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-        </span>
+      {/* Card de Resumen de Acumulados */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', marginBottom: '24px' }}>
+        <div className="card" style={{ marginBottom: 0, textAlign: 'center' }}>
+          <span style={{ fontSize: '13px', color: 'var(--text-dim)', fontWeight: '600' }}>TOTAL REGISTRADO</span>
+          <div style={{ fontSize: '24px', fontWeight: '800', color: 'var(--accent)', marginTop: '4px' }}>
+            Q{totalGeneral.toLocaleString('es-GT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          </div>
+        </div>
+        <div className="card" style={{ marginBottom: 0, textAlign: 'center' }}>
+          <span style={{ fontSize: '13px', color: 'var(--text-dim)', fontWeight: '600' }}>FILTRADO ACTUAL</span>
+          <div style={{ fontSize: '24px', fontWeight: '800', color: '#10b981', marginTop: '4px' }}>
+            Q{totalFiltrado.toLocaleString('es-GT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          </div>
+        </div>
+        <div className="card" style={{ marginBottom: 0, textAlign: 'center' }}>
+          <span style={{ fontSize: '13px', color: 'var(--text-dim)', fontWeight: '600' }}>REGISTROS VISIBLES</span>
+          <div style={{ fontSize: '24px', fontWeight: '800', marginTop: '4px' }}>
+            {filteredGastos.length} de {gastos.length}
+          </div>
+        </div>
       </div>
 
-      {/* Historial */}
+      {/* HISTORIAL COMPLETO Y FILTROS */}
       <div className="card">
-        <h2>
-          <span className="n">2</span>Historial de compras
-        </h2>
+        <h2><span className="n">2</span>Historial Completo de Compras</h2>
 
+        {/* Panel de Filtros */}
+        <div style={{ 
+          display: 'grid', 
+          gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', 
+          gap: '12px', 
+          padding: '16px', 
+          backgroundColor: 'rgba(255, 255, 255, 0.03)', 
+          borderRadius: '12px',
+          border: '1px solid rgba(255, 255, 255, 0.08)',
+          marginBottom: '20px'
+        }}>
+          <div>
+            <label style={{ fontSize: '12px', color: 'var(--text-dim)', display: 'block', marginBottom: '4px' }}>Buscar</label>
+            <input 
+              type="text" 
+              placeholder="Ej. Harina, Queso..." 
+              value={search} 
+              onChange={(e) => { setSearch(e.target.value); setCurrentPage(1); }}
+              style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--bg-input)', color: 'inherit' }}
+            />
+          </div>
+
+          <div>
+            <label style={{ fontSize: '12px', color: 'var(--text-dim)', display: 'block', marginBottom: '4px' }}>Categoría</label>
+            <select 
+              value={filterCategory} 
+              onChange={(e) => { setFilterCategory(e.target.value); setCurrentPage(1); }}
+              style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--bg-input)', color: 'inherit' }}
+            >
+              <option value="ALL">Todas las categorías</option>
+              {OPCIONES_CATEGORIA.map((c) => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label style={{ fontSize: '12px', color: 'var(--text-dim)', display: 'block', marginBottom: '4px' }}>Desde</label>
+            <input 
+              type="date" 
+              value={startDate} 
+              onChange={(e) => { setStartDate(e.target.value); setCurrentPage(1); }}
+              style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--bg-input)', color: 'inherit' }}
+            />
+          </div>
+
+          <div>
+            <label style={{ fontSize: '12px', color: 'var(--text-dim)', display: 'block', marginBottom: '4px' }}>Hasta</label>
+            <input 
+              type="date" 
+              value={endDate} 
+              onChange={(e) => { setEndDate(e.target.value); setCurrentPage(1); }}
+              style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--bg-input)', color: 'inherit' }}
+            />
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'flex-end' }}>
+            <button 
+              onClick={resetFilters}
+              type="button"
+              style={{ 
+                width: '100%', 
+                padding: '9px 12px', 
+                borderRadius: '8px', 
+                border: 'none', 
+                background: '#334155', 
+                color: '#fff', 
+                fontWeight: '600', 
+                cursor: 'pointer' 
+              }}
+            >
+              Limpiar
+            </button>
+          </div>
+        </div>
+
+        {/* Tabla */}
         <div className="table-wrapper">
           <table className="gastos-table">
             <thead>
               <tr>
-                <th style={{ width: '100px' }}>Fecha</th>
+                <th style={{ width: '110px' }}>Fecha</th>
                 <th style={{ width: '180px' }}>Categoría</th>
                 <th>Descripción</th>
-                <th style={{ textAlign: 'right', width: '110px' }}>Monto</th>
-                <th style={{ textAlign: 'center', width: '60px' }}>Acciones</th>
+                <th style={{ textAlign: 'right', width: '120px' }}>Monto</th>
+                <th style={{ textAlign: 'center', width: '60px' }}>Acción</th>
               </tr>
             </thead>
             <tbody>
-              {gastos.length === 0 ? (
+              {paginatedGastos.length === 0 ? (
                 <tr>
                   <td colSpan={5} style={{ textAlign: 'center', color: 'var(--text-dim)', padding: '32px 0' }}>
-                    No hay compras o gastos registrados todavía.
+                    No se encontraron registros con los filtros aplicados.
                   </td>
                 </tr>
               ) : (
-                gastos.map((g) => (
+                paginatedGastos.map((g) => (
                   <tr key={g.id}>
                     <td style={{ color: 'var(--text-dim)', fontSize: '13px' }}>
                       {new Date(g.fecha).toLocaleDateString()}
@@ -248,7 +378,7 @@ export default function Home() {
                     <td style={{ textAlign: 'center' }}>
                       <button
                         onClick={() => handleDelete(g.id)}
-                        title="Eliminar registro"
+                        title="Eliminar gasto"
                         style={{
                           background: 'transparent',
                           border: 'none',
@@ -266,6 +396,47 @@ export default function Home() {
             </tbody>
           </table>
         </div>
+
+        {/* Controles de Paginación */}
+        {totalPages > 1 && (
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '20px' }}>
+            <span style={{ fontSize: '13px', color: 'var(--text-dim)' }}>
+              Página {currentPage} de {totalPages}
+            </span>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <button
+                disabled={currentPage === 1}
+                onClick={() => setCurrentPage((p) => p - 1)}
+                style={{
+                  padding: '6px 12px',
+                  borderRadius: '6px',
+                  border: '1px solid var(--border)',
+                  background: 'var(--bg-input)',
+                  color: 'inherit',
+                  cursor: currentPage === 1 ? 'not-allowed' : 'pointer',
+                  opacity: currentPage === 1 ? 0.5 : 1
+                }}
+              >
+                ◀ Anterior
+              </button>
+              <button
+                disabled={currentPage === totalPages}
+                onClick={() => setCurrentPage((p) => p + 1)}
+                style={{
+                  padding: '6px 12px',
+                  borderRadius: '6px',
+                  border: '1px solid var(--border)',
+                  background: 'var(--bg-input)',
+                  color: 'inherit',
+                  cursor: currentPage === totalPages ? 'not-allowed' : 'pointer',
+                  opacity: currentPage === totalPages ? 0.5 : 1
+                }}
+              >
+                Siguiente ▶
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       <footer>CasiPizza · Sistema de Gestión Interna</footer>
